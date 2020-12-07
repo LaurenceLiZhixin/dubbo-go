@@ -121,5 +121,7 @@ func getInvoker(impl interface{}, conn *grpc.ClientConn) interface{} {
 	in = append(in, reflect.ValueOf(conn))
 	method := reflect.ValueOf(impl).MethodByName("GetDubboStub")
 	res := method.Call(in)
-	return res[0].Interface()//res[0] 是一个包含了SayHello方法的struct
+	// res[0] 是一个包含了SayHello方法的struct: greeterClient,他的SayHello方法会调用conn的Invoke来具体实现
+	// 会给conn传入具体结构体，conn断言直接打包即可
+	return res[0].Interface()
 }

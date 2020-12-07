@@ -2,19 +2,20 @@ package dubbo3
 
 import (
 	"context"
+	hessian2 "github.com/apache/dubbo-go-hessian2"
 	"github.com/apache/dubbo-go/common"
 	"github.com/apache/dubbo-go/common/constant"
 	"github.com/apache/dubbo-go/common/logger"
 	"github.com/apache/dubbo-go/config"
 	"github.com/apache/dubbo-go/protocol"
 	invocation_impl "github.com/apache/dubbo-go/protocol/invocation"
-	"github.com/apache/dubbo-go/remoting"
+	"github.com/apache/dubbo-go/remoting/dubbo3"
 	"github.com/opentracing/opentracing-go"
 	perrors "github.com/pkg/errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -34,7 +35,7 @@ var (
 type Dubbo3Invoker struct {
 	protocol.BaseInvoker
 	// the exchange layer, it is focus on network communication.
-	client   *remoting.ExchangeClient
+	client   *dubbo3.TripleClient
 	quitOnce sync.Once
 	// timeout for service(interface) level.
 	timeout time.Duration
@@ -43,13 +44,15 @@ type Dubbo3Invoker struct {
 }
 
 // NewDubbo3Invoker constructor
-func NewDubbo3Invoker(url *common.URL, client *remoting.ExchangeClient) *Dubbo3Invoker {
+func NewDubbo3Invoker(url *common.URL) *Dubbo3Invoker {
 	requestTimeout := config.GetConsumerConfig().RequestTimeout
-
 	requestTimeoutStr := url.GetParam(constant.TIMEOUT_KEY, config.GetConsumerConfig().Request_Timeout)
 	if t, err := time.ParseDuration(requestTimeoutStr); err == nil {
 		requestTimeout = t
 	}
+
+	client := dubbo3.NewTripleClient(url)
+
 	return &Dubbo3Invoker{
 		BaseInvoker: *protocol.NewBaseInvoker(url),
 		client:      client,
@@ -58,67 +61,29 @@ func NewDubbo3Invoker(url *common.URL, client *remoting.ExchangeClient) *Dubbo3I
 	}
 }
 
+
 // Invoke call remoting.
 func (di *Dubbo3Invoker) Invoke(ctx context.Context, invocation protocol.Invocation) protocol.Result {
 	var (
-		err    error
 		result protocol.RPCResult
 	)
-	if di.reqNum < 0 {
-		// Generally, the case will not happen, because the invoker has been removed
-		// from the invoker list before destroy,so no new request will enter the destroyed invoker
-		logger.Warnf("this dubboInvoker is destroyed")
-		result.Err = ErrDestroyedInvoker
-		return &result
-	}
-	atomic.AddInt64(&(di.reqNum), 1)
-	defer atomic.AddInt64(&(di.reqNum), -1)
 
-	inv := invocation.(*invocation_impl.RPCInvocation)
-	// init param
-	inv.SetAttachments(constant.PATH_KEY, di.GetUrl().GetParam(constant.INTERFACE_KEY, ""))
-	for _, k := range attachmentKey {
-		if v := di.GetUrl().GetParam(k, ""); len(v) > 0 {
-			inv.SetAttachments(k, v)
-		}
-	}
+	var in []reflect.Value
+	in = append(in, reflect.ValueOf(context.Background()))
+	// 这里invocation.ParameterValues()就是要传入的value
+	in = append(in, invocation.ParameterValues()...)
 
-	// put the ctx into attachment
-	di.appendCtx(ctx, inv)
+	methodName := invocation.MethodName()
+	method := di.client.Invoker.MethodByName(methodName)
+	res := method.Call(in)
 
-	url := di.GetUrl()
-	// default hessian2 serialization, compatible
-	if url.GetParam(constant.SERIALIZATION_KEY, "") == "" {
-		url.SetParam(constant.SERIALIZATION_KEY, constant.HESSIAN2_SERIALIZATION)
-	}
-	// async
-	async, err := strconv.ParseBool(inv.AttachmentsByKey(constant.ASYNC_KEY, "false"))
-	if err != nil {
-		logger.Errorf("ParseBool - error: %v", err)
-		async = false
-	}
-	//response := NewResponse(inv.Reply(), nil)
-	rest := &protocol.RPCResult{}
-	timeout := di.getTimeout(inv)
-	if async {
-		if callBack, ok := inv.CallBack().(func(response common.CallbackResponse)); ok {
-			//result.Err = di.client.AsyncCall(NewRequest(url.Location, url, inv.MethodName(), inv.Arguments(), inv.Attachments()), callBack, response)
-			result.Err = di.client.AsyncRequest(&invocation, url, timeout, callBack, rest)
-		} else {
-			result.Err = di.client.Send(&invocation, url, timeout)
-		}
+	result.Rest = res[0]
+	// check err
+	if !res[1].IsNil() {
+		result.Err = res[1].Interface().(error)
 	} else {
-		if inv.Reply() == nil {
-			result.Err = ErrNoReply
-		} else {
-			result.Err = di.client.Request(&invocation, url, timeout, rest)
-		}
+		_ = hessian2.ReflectResponse(res[0], invocation.Reply())
 	}
-	if result.Err == nil {
-		result.Rest = inv.Reply()
-		result.Attrs = rest.Attrs
-	}
-	logger.Debugf("result.Err: %v, result.Rest: %v", result.Err, result.Rest)
 
 	return &result
 }

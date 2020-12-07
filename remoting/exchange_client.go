@@ -103,6 +103,8 @@ func (client *ExchangeClient) Request(invocation *protocol.Invocation, url *comm
 	rsp.Reply = (*invocation).Reply()
 	AddPendingResponse(rsp)
 
+
+
 	err := client.client.Request(request, timeout, rsp)
 	// request error
 	if err != nil {

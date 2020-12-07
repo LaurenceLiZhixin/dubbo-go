@@ -17,13 +17,12 @@
 package dubbo3
 
 import (
-"context"
-"fmt"
+	"context"
+	"fmt"
 	"github.com/apache/dubbo-go/remoting/dubbo3"
 	"google.golang.org/grpc"
 	"reflect"
 	"sync"
-"time"
 )
 
 import (
@@ -38,7 +37,6 @@ import (
 	"github.com/apache/dubbo-go/config"
 	"github.com/apache/dubbo-go/protocol"
 	"github.com/apache/dubbo-go/protocol/invocation"
-	"github.com/apache/dubbo-go/remoting"
 )
 
 const (
@@ -94,12 +92,7 @@ func (dp *Dubbo3Protocol) Export(invoker protocol.Invoker) protocol.Exporter {
 
 // Refer create dubbo3 service reference.
 func (dp *Dubbo3Protocol) Refer(url *common.URL) protocol.Invoker {
-	exchangeClient := getExchangeClient(url)
-	if exchangeClient == nil {
-		logger.Warnf("can't dial the server: %+v", url.Location)
-		return nil
-	}
-	invoker := NewDubbo3Invoker(url, exchangeClient)
+	invoker := NewDubbo3Invoker(url)
 	dp.SetInvokers(invoker)
 	logger.Infof("Refer service: %s", url.String())
 	return invoker
@@ -212,45 +205,6 @@ func doHandleRequest(rpcInvocation *invocation.RPCInvocation) protocol.RPCResult
 		result.Err = fmt.Errorf("don't have the invoker, key: %s", rpcInvocation.ServiceKey())
 	}
 	return result
-}
-
-func getExchangeClient(url *common.URL) *remoting.ExchangeClient {
-	clientTmp, ok := exchangeClientMap.Load(url.Location)
-	if !ok {
-		var exchangeClientTmp *remoting.ExchangeClient
-		func() {
-			// lock for NewExchangeClient and store into map.
-			_, loaded := exchangeLock.LoadOrStore(url.Location, 0x00)
-			// unlock
-			defer exchangeLock.Delete(url.Location)
-			if loaded {
-				// retry for 5 times.
-				for i := 0; i < 5; i++ {
-					if clientTmp, ok = exchangeClientMap.Load(url.Location); ok {
-						break
-					} else {
-						// if cannot get, sleep a while.
-						time.Sleep(time.Duration(i*100) * time.Millisecond)
-					}
-				}
-				return
-			}
-			// new ExchangeClient
-			exchangeClientTmp = remoting.NewExchangeClient(url, dubbo3.NewTripleClient(), config.GetConsumerConfig().ConnectTimeout, false)
-			// input store
-			if exchangeClientTmp != nil {
-				exchangeClientMap.Store(url.Location, exchangeClientTmp)
-			}
-		}()
-		if exchangeClientTmp != nil {
-			return exchangeClientTmp
-		}
-	}
-	// cannot dial the server
-	if clientTmp == nil {
-		return nil
-	}
-	return clientTmp.(*remoting.ExchangeClient)
 }
 
 // rebuildCtx rebuild the context by attachment.

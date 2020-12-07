@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/apache/dubbo-go/common"
+	"github.com/gogo/protobuf/proto"
 	"io"
 	"net"
 
@@ -208,7 +209,7 @@ func (h *H2Controller) addStream(data parsedTripleHeaderData) {
 	go h.runSendRsp(h.streamMap[data.streamID])
 }
 
-func (h *H2Controller) UnaryInvoke(path string, url string,data []byte) {
+func (h *H2Controller) UnaryInvoke(path string, url string,data []byte, reply interface{}) {
 	// metadata header
 	headerFields := make([]hpack.HeaderField, 0, 2) // at least :status, content-type will be there if none else.
 	headerFields = append(headerFields, hpack.HeaderField{Name: ":method", Value: "POST"})
@@ -229,7 +230,7 @@ func (h *H2Controller) UnaryInvoke(path string, url string,data []byte) {
 	hflen := buf.Len()
 	hfData := buf.Next(hflen)
 
-	h.rawFramer.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
+//	h.rawFramer.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
 
 	id := uint32(1)
 	if err := h.rawFramer.WriteHeaders(h2.HeadersFrameParam{
@@ -272,8 +273,11 @@ func (h *H2Controller) UnaryInvoke(path string, url string,data []byte) {
 			id = fm.StreamID
 			fmt.Println("MetaHeader frame = ", fm.String(), "id = ", id)
 			parsedTripleHeaderData := parsedTripleHeaderData{}
-
+			if fm.Flags.Has(h2.FlagDataEndStream){
+				return
+			}
 			parsedTripleHeaderData.FromMetaHeaderFrame(fm)
+
 		case *h2.DataFrame:
 			fmt.Println("DataFrame")
 			frameData := fm.Data()
@@ -281,12 +285,9 @@ func (h *H2Controller) UnaryInvoke(path string, url string,data []byte) {
 			header := frameData[:5]
 			length := binary.BigEndian.Uint32(header[1:])
 			fmt.Println("length = ", length)
-			//proto.Unmarshal(fm.Data()[5:5+length], )
-			fmt.Printf("rsp = %+v\n",frameData )
-
+			replyMessage := reply.(proto.Message)
+			proto.Unmarshal(fm.Data()[5:5+length], replyMessage)
 			//todo 这里增加返回指针，返回请求结果
-
-
 		case *h2.RSTStreamFrame:
 			fmt.Println("RSTStreamFrame")
 		case *h2.SettingsFrame:
