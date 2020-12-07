@@ -3,6 +3,7 @@ package dubbo3
 import (
 	"bytes"
 	"fmt"
+	"google.golang.org/grpc"
 	"sync"
 )
 
@@ -60,14 +61,16 @@ type stream struct {
 	sendBuf   *MsgBuffer
 	method    string
 	processor *processor
+	desc grpc.MethodDesc
 }
 
-func newStream(data parsedTripleHeaderData) *stream {
+func newStream(data parsedTripleHeaderData, desc grpc.MethodDesc) *stream {
 	newStream := &stream{
 		ID:      data.streamID,
 		method:  data.method,
 		recvBuf: newRecvBuffer(),
 		sendBuf: newRecvBuffer(),
+		desc: desc,
 	}
 	newStream.processor = newProcessor(newStream)
 	go newStream.run()
@@ -82,7 +85,7 @@ func (s *stream) run() {
 		if recvMsg.err != nil {
 			continue
 		}
-		rspBuffer, err := s.processor.processUnaryRPC(*recvMsg.buffer, s)
+		rspBuffer, err := s.processor.processUnaryRPC(*recvMsg.buffer, s.method, s.desc)
 		if err != nil {
 			fmt.Println("error ,s.processUnaryRPC err = ", err)
 			continue

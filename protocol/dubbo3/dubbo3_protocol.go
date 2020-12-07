@@ -64,7 +64,7 @@ type Dubbo3Protocol struct {
 	protocol.BaseProtocol
 	// It is store relationship about serviceKey(group/interface:version) and ExchangeServer
 	// The ExchangeServer is introduced to replace of Server. Because Server is depend on getty directly.
-	serverMap  map[string]*remoting.ExchangeServer
+	serverMap  map[string]*dubbo3.TripleServer
 	serverLock sync.Mutex
 }
 
@@ -72,7 +72,7 @@ type Dubbo3Protocol struct {
 func NewDubbo3Protocol() *Dubbo3Protocol {
 	return &Dubbo3Protocol{
 		BaseProtocol: protocol.NewBaseProtocol(),
-		serverMap:    make(map[string]*remoting.ExchangeServer),
+		serverMap:    make(map[string]*dubbo3.TripleServer),
 	}
 }
 
@@ -125,12 +125,9 @@ func (dp *Dubbo3Protocol) openServer(url *common.URL) {
 		dp.serverLock.Lock()
 		_, ok = dp.serverMap[url.Location]
 		if !ok {
-			handler := func(invocation *invocation.RPCInvocation) protocol.RPCResult {
-				return doHandleRequest(invocation)
-			}
-			srv := remoting.NewExchangeServer(url, dubbo3.NewTripleServer(url,handler))
+			srv :=  dubbo3.NewTripleServer(url)
 			dp.serverMap[url.Location] = srv
-			srv.Start()
+			srv.Start(url)
 		}
 		dp.serverLock.Unlock()
 	}

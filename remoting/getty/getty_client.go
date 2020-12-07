@@ -18,12 +18,13 @@
 package getty
 
 import (
+	getty "github.com/apache/dubbo-getty"
 	"math/rand"
 	"time"
 )
 
+
 import (
-	"github.com/apache/dubbo-getty"
 	gxsync "github.com/dubbogo/gost/sync"
 	perrors "github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
@@ -102,8 +103,8 @@ func SetClientConf(c ClientConfig) {
 
 func setClientGrpool() {
 	if clientConf.GrPoolSize > 1 {
-		clientGrpool = gxsync.NewTaskPool(gxsync.WithTaskPoolTaskPoolSize(clientConf.GrPoolSize), gxsync.WithTaskPoolTaskQueueLength(clientConf.QueueLen),
-			gxsync.WithTaskPoolTaskQueueNumber(clientConf.QueueNumber))
+		//clientGrpool = gxsync.NewTaskPool(gxsync.WithTaskPoolTaskPoolSize(clientConf.GrPoolSize), gxsync.WithTaskPoolTaskQueueLength(clientConf.QueueLen),
+		//	gxsync.WithTaskPoolTaskQueueNumber(clientConf.QueueNumber))
 	}
 }
 

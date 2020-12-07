@@ -1,34 +1,55 @@
 package dubbo3
 
 import (
+	"fmt"
 	"github.com/apache/dubbo-go/common"
+	"github.com/apache/dubbo-go/common/constant"
 	"github.com/apache/dubbo-go/common/logger"
+	"github.com/apache/dubbo-go/config"
 	"github.com/apache/dubbo-go/protocol"
-	"github.com/apache/dubbo-go/protocol/invocation"
+	"google.golang.org/grpc"
 	"net"
 	"sync"
 )
 
 
-type tripleServer struct {
+type TripleServer struct {
 	lst net.Listener
-	handler func(*invocation.RPCInvocation) protocol.RPCResult
 	addr string
+	rpcService common.RPCService
+	methodsDesc []grpc.MethodDesc
 }
 
-func NewTripleServer(url *common.URL, handlers func(*invocation.RPCInvocation) protocol.RPCResult) *tripleServer {
-	return &tripleServer{
+func NewTripleServer(url *common.URL) *TripleServer {
+	return &TripleServer{
 		addr: url.Location,
-		handler: handlers,
 	}
 }
 
 // todo stop server
-func (t*tripleServer) Stop(){
+func (t*TripleServer) Stop(){
 
 }
 
-func (t*tripleServer) Start(){
+// DubboGrpcService is gRPC service
+type DubboGrpcService interface {
+	// SetProxyImpl sets proxy.
+	SetProxyImpl(impl protocol.Invoker)
+	// GetProxyImpl gets proxy.
+	GetProxyImpl() protocol.Invoker
+	// ServiceDesc gets an RPC service's specification.
+	ServiceDesc() *grpc.ServiceDesc
+}
+
+func (t*TripleServer) Start(url *common.URL){
+	key := url.GetParam(constant.BEAN_NAME_KEY, "")
+	fmt.Println("key = ", key)
+	service := config.GetProviderService(key)
+	ds, ok := service.(DubboGrpcService)
+	if !ok{
+		panic("TripleServer Start failed, service not impl DubboGrpcService")
+	}
+	t.methodsDesc = ds.ServiceDesc().Methods
 	logger.Warn("tripleServer Start at ", t.addr)
 	lst, err := net.Listen("tcp", t.addr)
 	if err != nil {
@@ -38,7 +59,7 @@ func (t*tripleServer) Start(){
 	t.Run()
 }
 
-func (t *tripleServer) Run() {
+func (t *TripleServer) Run() {
 	wg := sync.WaitGroup{}
 	for {
 		conn, err := t.lst.Accept()
@@ -53,8 +74,8 @@ func (t *tripleServer) Run() {
 	}
 }
 
-func (t *tripleServer) handleRawConn(conn net.Conn) {
-	h2Controller := NewH2Controller(conn, true)
+func (t *TripleServer) handleRawConn(conn net.Conn) {
+	h2Controller := NewH2Controller(conn, true, t.methodsDesc[0])
 	h2Controller.H2ShakeHand()
 	h2Controller.run()
 }

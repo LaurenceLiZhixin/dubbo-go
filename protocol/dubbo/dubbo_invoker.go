@@ -128,6 +128,7 @@ func (di *DubboInvoker) Invoke(ctx context.Context, invocation protocol.Invocati
 			//result.Err = di.client.AsyncCall(NewRequest(url.Location, url, inv.MethodName(), inv.Arguments(), inv.Attachments()), callBack, response)
 			result.Err = di.client.AsyncRequest(&invocation, url, timeout, callBack, rest)
 		} else {
+			// todo 这里send出去的能直接被marshal打包
 			result.Err = di.client.Send(&invocation, url, timeout)
 		}
 	} else {

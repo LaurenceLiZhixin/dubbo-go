@@ -64,6 +64,7 @@ func (gi *GrpcInvoker) Invoke(ctx context.Context, invocation protocol.Invocatio
 
 	var in []reflect.Value
 	in = append(in, reflect.ValueOf(context.Background()))
+	// 这里invocation.ParameterValues()就是要传入的value
 	in = append(in, invocation.ParameterValues()...)
 
 	methodName := invocation.MethodName()

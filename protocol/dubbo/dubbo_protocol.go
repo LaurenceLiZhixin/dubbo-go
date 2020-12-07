@@ -96,6 +96,7 @@ func (dp *DubboProtocol) Refer(url *common.URL) protocol.Invoker {
 		logger.Warnf("can't dial the server: %+v", url.Location)
 		return nil
 	}
+	// todo dubbo3不用exchangeClient，直接放
 	invoker := NewDubboInvoker(url, exchangeClient)
 	dp.SetInvokers(invoker)
 	logger.Infof("Refer service: %s", url.String())

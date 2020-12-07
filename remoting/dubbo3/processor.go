@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-
+	"google.golang.org/grpc"
 	pb "triple-protocol/protocol"
 
 	"github.com/golang/protobuf/proto"
@@ -28,19 +28,28 @@ func newProcessor(s *stream) *processor {
 	}
 }
 
-func (p *processor) processUnaryRPC(buf bytes.Buffer, stream *stream) (*bytes.Buffer, error) {
+func (p *processor) processUnaryRPC(buf bytes.Buffer, method string, desc grpc.MethodDesc) (*bytes.Buffer, error) {
 	readBuf := buf.Bytes()
 	header := readBuf[:5]
 	length := binary.BigEndian.Uint32(header[1:])
 
-	desc := func(v interface{}) error {
+	descFunc := func(v interface{}) error {
 		if err := p.codec.Unmarshal(readBuf[5:5+length], v.(proto.Message)); err != nil {
 			return err
 		}
 		return nil
 	}
-	// 执行函数
-	reply, err := pb.Greeter_serviceDesc.Methods[0].Handler(server{}, context.Background(), desc, nil)
+	// todo 这里不能用dubbo handler，应该用pb的handler，否则无法protocol解包
+	// 需要cli支持
+	//var v interface{}
+	//p.codec.Unmarshal(readBuf[5:5+length], v.(proto.Message))
+	//var args []interface{}
+	//args = append(args, v)
+	//// 执行函数
+	//handler(invocation.NewRPCInvocation(method,args,nil))
+
+	// todo 明天 尝试一下用proto-gen-dubbo生成的desc能不能成功调用。
+	reply, err := desc.Handler(server{}, context.Background(), descFunc, nil)
 	if err != nil {
 		return nil, err
 	}

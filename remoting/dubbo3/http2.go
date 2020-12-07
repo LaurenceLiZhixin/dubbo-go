@@ -2,10 +2,13 @@ package dubbo3
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
-	"github.com/apache/dubbo-go/remoting"
+	"github.com/golang/protobuf/proto"
+	"google.golang.org/grpc"
 	"io"
 	"net"
+	pb "triple-protocol/protocol"
 
 	h2 "golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -17,9 +20,10 @@ type H2Controller struct {
 	isServer  bool
 
 	streamMap map[uint32]*stream
+	desc grpc.MethodDesc
 }
 
-func NewH2Controller(conn net.Conn, isServer bool) *H2Controller {
+func NewH2Controller(conn net.Conn, isServer bool, desc grpc.MethodDesc) *H2Controller {
 	fm := h2.NewFramer(conn, conn)
 	fm.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
 	return &H2Controller{
@@ -27,6 +31,7 @@ func NewH2Controller(conn net.Conn, isServer bool) *H2Controller {
 		conn:      conn,
 		isServer:  isServer,
 		streamMap: make(map[uint32]*stream, 8),
+		desc: desc,
 	}
 }
 
@@ -199,11 +204,11 @@ func (h *H2Controller) handleDataFrame(fm *h2.DataFrame) {
 }
 
 func (h *H2Controller) addStream(data parsedTripleHeaderData) {
-	h.streamMap[data.streamID] = newStream(data)
+	h.streamMap[data.streamID] = newStream(data, h.desc)
 	go h.runSendRsp(h.streamMap[data.streamID])
 }
 
-func (h *H2Controller) UnaryInvoke(path string, url string,req *remoting.Request) {
+func (h *H2Controller) UnaryInvoke(path string, url string,data []byte) {
 	// metadata header
 	headerFields := make([]hpack.HeaderField, 0, 2) // at least :status, content-type will be there if none else.
 	headerFields = append(headerFields, hpack.HeaderField{Name: ":method", Value: "POST"})
@@ -236,5 +241,70 @@ func (h *H2Controller) UnaryInvoke(path string, url string,req *remoting.Request
 		fmt.Println("error: write rsp header error", err)
 	}
 
+
+	// todo 继续请求，发送数据，接受返回值
+
+	//req := pb.HelloRequest{
+	//	Name: "lauranceli",
+	//	ID:   123,
+	//	Subobj: &pb.HelloSubObj{
+	//		SubName: "li",
+	//	},
+	//}
+	header := make([]byte, 5)
+	header[0] = 0
+	binary.BigEndian.PutUint32(header[1:], uint32(len(data)))
+	body := make([]byte, 5+len(data))
+	copy(body[:5], header)
+	copy(body[5:], data)
+	h.rawFramer.WriteData(id, true, body)
+
+
+
+	for {
+		fm, err := h.rawFramer.ReadFrame()
+		if err != nil {
+			fmt.Println("error = ", err)
+			break
+		}
+		switch fm := fm.(type) {
+		case *h2.MetaHeadersFrame:
+			id = fm.StreamID
+			fmt.Println("MetaHeader frame = ", fm.String(), "id = ", id)
+			parsedTripleHeaderData := parsedTripleHeaderData{}
+
+			parsedTripleHeaderData.FromMetaHeaderFrame(fm)
+		case *h2.DataFrame:
+			fmt.Println("DataFrame")
+			fm.Data()
+			frameData := fm.Data()
+			fmt.Println(len(frameData))
+			header := frameData[:5]
+			length := binary.BigEndian.Uint32(header[1:])
+			fmt.Println("length = ", length)
+			rsp := pb.HelloReply{}
+			proto.Unmarshal(fm.Data()[5:5+length], &rsp)
+			fmt.Printf("rsp = %+v\n", rsp)
+
+			//todo 这里增加返回指针，返回请求结果
+
+
+		case *h2.RSTStreamFrame:
+			fmt.Println("RSTStreamFrame")
+		case *h2.SettingsFrame:
+			fmt.Println("SettingsFrame frame = ", fm.String())
+		case *h2.PingFrame:
+			fmt.Println("PingFrame")
+		case *h2.WindowUpdateFrame:
+			fmt.Println("WindowUpdateFrame")
+		case *h2.GoAwayFrame:
+			fmt.Println("GoAwayFrame")
+			// TODO: Handle GoAway from the client appropriately.
+		default:
+			fmt.Println("default = %+v", fm)
+			//r := frame.(*h2.MetaHeadersFrame)
+			//fmt.Println(r)
+		}
+	}
 
 }

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"github.com/apache/dubbo-go/common"
 	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/protocol/invocation"
+	"github.com/apache/dubbo-go/protocol"
 	"github.com/apache/dubbo-go/remoting"
-	perrors "github.com/pkg/errors"
+	"github.com/golang/protobuf/proto"
+	"google.golang.org/grpc"
 	"net"
 	"time"
 )
@@ -17,9 +18,12 @@ type TripleClient struct {
 	exchangeClient *remoting.ExchangeClient
 	addr string
 }
+func NewTripleClient()*TripleClient {
+	return &TripleClient{}
+}
 
-func(t*TripleClient) SetExchangeClient(client *remoting.ExchangeClient){
-	t.exchangeClient= client
+func (t*TripleClient) SetExchangeClient(eclient *remoting.ExchangeClient){
+	t.exchangeClient = eclient
 }
 
 func (t*TripleClient)Connect(url *common.URL) error {
@@ -30,18 +34,25 @@ func (t*TripleClient)Connect(url *common.URL) error {
 	}
 	t.addr = url.Location
 	t.conn = conn
-	h2Controller := NewH2Controller(t.conn, false)
+	h2Controller := NewH2Controller(t.conn, false, grpc.MethodDesc{})
 	h2Controller.H2ShakeHand()
 	return nil
 }
 
-func (t*TripleClient)Request(request *remoting.Request, timeout time.Duration, response *remoting.PendingResponse) error {
-	invocation, ok := request.Data.(invocation.RPCInvocation)
-	if !ok{
-		return perrors.New("request is not invocation")
+func (t*TripleClient)Request(request *remoting.Request, timeout time.Duration, response *remoting.PendingResponse) error{
+	//invocation, ok := request.Data.(invocation.RPCInvocation)
+	//if !ok{
+	//	return perrors.New("request is not invocation")
+	//}
+	invocationPtr := request.Data.(*protocol.Invocation)
+	argValues := (*invocationPtr).Arguments()
+	reqData, err := proto.Marshal(argValues[0].(proto.Message))
+
+	if err != nil{
+		panic("client request marshal not ok ")
 	}
-	fmt.Printf("getInvocation = %+v\n", invocation)
-	t.h2Controller.UnaryInvoke(invocation.MethodName(), t.conn.RemoteAddr().String(), request)
+	fmt.Printf("getInvocation first arg = %+v\n", reqData)
+	t.h2Controller.UnaryInvoke((*invocationPtr).MethodName(), t.conn.RemoteAddr().String(), reqData)
 	// todo call remote and recv rsp
 	return nil
 }
@@ -52,8 +63,4 @@ func (t*TripleClient) Close() {
 
 func (t*TripleClient) IsAvailable() bool {
 	return true
-}
-
-func NewTripleClient() *TripleClient {
-	return &TripleClient{}
 }
