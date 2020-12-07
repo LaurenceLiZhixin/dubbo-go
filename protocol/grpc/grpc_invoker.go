@@ -44,7 +44,7 @@ type GrpcInvoker struct {
 	client   *Client
 }
 
-// NewGrpcInvoker returns a Grpc invoker instance
+// NewGrpcInvoker returns a Grpc invoker instance 返回的Invoker的client的invoker是包含SayHello方法的结构
 func NewGrpcInvoker(url *common.URL, client *Client) *GrpcInvoker {
 	return &GrpcInvoker{
 		BaseInvoker: *protocol.NewBaseInvoker(url),

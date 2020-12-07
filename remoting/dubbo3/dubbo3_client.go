@@ -7,7 +7,6 @@ import (
 	"github.com/apache/dubbo-go/protocol"
 	"github.com/apache/dubbo-go/remoting"
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc"
 	"net"
 	"time"
 )
@@ -34,7 +33,7 @@ func (t*TripleClient)Connect(url *common.URL) error {
 	}
 	t.addr = url.Location
 	t.conn = conn
-	h2Controller := NewH2Controller(t.conn, false, grpc.MethodDesc{})
+	h2Controller := NewH2Controller(t.conn, false,nil, nil)
 	h2Controller.H2ShakeHand()
 	return nil
 }

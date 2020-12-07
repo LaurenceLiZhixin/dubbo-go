@@ -20,6 +20,8 @@ import (
 "context"
 "fmt"
 	"github.com/apache/dubbo-go/remoting/dubbo3"
+	"google.golang.org/grpc"
+	"reflect"
 	"sync"
 "time"
 )
@@ -52,6 +54,7 @@ var (
 )
 
 func init() {
+	logger.Warn("Init extension")
 	extension.SetProtocol(DUBBO3, GetProtocol)
 }
 
@@ -84,6 +87,7 @@ func (dp *Dubbo3Protocol) Export(invoker protocol.Invoker) protocol.Exporter {
 	dp.SetExporterMap(serviceKey, exporter)
 	logger.Infof("Export service: %s", url.String())
 	// start server
+
 	dp.openServer(url)
 	return exporter
 }
@@ -114,7 +118,20 @@ func (dp *Dubbo3Protocol) Destroy() {
 	}
 }
 
+// Dubbo3GrpcService is gRPC service
+type Dubbo3GrpcService interface {
+	// SetProxyImpl sets proxy.
+	SetProxyImpl(impl protocol.Invoker)
+	// GetProxyImpl gets proxy.
+	GetProxyImpl() protocol.Invoker
+	// ServiceDesc gets an RPC service's specification.
+	ServiceDesc() *grpc.ServiceDesc
+}
+
+
+
 func (dp *Dubbo3Protocol) openServer(url *common.URL) {
+	logger.Warn("in openServer")
 	_, ok := dp.serverMap[url.Location]
 	if !ok {
 		_, ok := dp.ExporterMap().Load(url.ServiceKey())
@@ -125,9 +142,33 @@ func (dp *Dubbo3Protocol) openServer(url *common.URL) {
 		dp.serverLock.Lock()
 		_, ok = dp.serverMap[url.Location]
 		if !ok {
-			srv :=  dubbo3.NewTripleServer(url)
+			key := url.GetParam(constant.BEAN_NAME_KEY, "")
+			fmt.Println("key = ", key)
+			service := config.GetProviderService(key)
+
+			m, ok := reflect.TypeOf(service).MethodByName("SetProxyImpl")
+			if !ok {
+				panic("method SetProxyImpl is necessary for grpc service")
+			}
+
+			exporter, _ := dubbo3Protocol.ExporterMap().Load(url.ServiceKey())
+			if exporter == nil {
+				panic(fmt.Sprintf("no exporter found for servicekey: %v", url.ServiceKey()))
+			}
+			invoker := exporter.(protocol.Exporter).GetInvoker()
+			if invoker == nil {
+				panic(fmt.Sprintf("no invoker found for servicekey: %v", url.ServiceKey()))
+			}
+
+			in := []reflect.Value{reflect.ValueOf(service)}
+			in = append(in, reflect.ValueOf(invoker))
+			m.Func.Call(in)
+
+			srv :=  dubbo3.NewTripleServer(url, service)
+
 			dp.serverMap[url.Location] = srv
-			srv.Start(url)
+
+			srv.Start()
 		}
 		dp.serverLock.Unlock()
 	}

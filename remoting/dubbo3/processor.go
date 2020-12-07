@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
-	"google.golang.org/grpc"
-	pb "triple-protocol/protocol"
-
+	"github.com/apache/dubbo-go/common"
+	"github.com/apache/dubbo-go/common/logger"
+	"github.com/apache/dubbo-go/protocol"
 	"github.com/golang/protobuf/proto"
+	"google.golang.org/grpc"
 )
 
 const defaultRWBufferMaxLen = 4096
@@ -17,6 +17,16 @@ type processor struct {
 	stream                *stream
 	codec                 CodeC
 	readWriteMaxBufferLen uint32 // useless
+}
+
+// Dubbo3GrpcService is gRPC service
+type Dubbo3GrpcService interface {
+	// SetProxyImpl sets proxy.
+	SetProxyImpl(impl protocol.Invoker)
+	// GetProxyImpl gets proxy.
+	GetProxyImpl() protocol.Invoker
+	// ServiceDesc gets an RPC service's specification.
+	ServiceDesc() *grpc.ServiceDesc
 }
 
 // protoc config参数增加,对codec进行选择
@@ -28,7 +38,7 @@ func newProcessor(s *stream) *processor {
 	}
 }
 
-func (p *processor) processUnaryRPC(buf bytes.Buffer, method string, desc grpc.MethodDesc) (*bytes.Buffer, error) {
+func (p *processor) processUnaryRPC(buf bytes.Buffer, method string, service common.RPCService, url *common.URL) (*bytes.Buffer, error) {
 	readBuf := buf.Bytes()
 	header := readBuf[:5]
 	length := binary.BigEndian.Uint32(header[1:])
@@ -47,9 +57,13 @@ func (p *processor) processUnaryRPC(buf bytes.Buffer, method string, desc grpc.M
 	//args = append(args, v)
 	//// 执行函数
 	//handler(invocation.NewRPCInvocation(method,args,nil))
+	ds, ok := service.(Dubbo3GrpcService)
+	if !ok{
+		logger.Error("service is not Dubbo3GrpcService")
+	}
 
 	// todo 明天 尝试一下用proto-gen-dubbo生成的desc能不能成功调用。
-	reply, err := desc.Handler(server{}, context.Background(), descFunc, nil)
+	reply, err := ds.ServiceDesc().Methods[0].Handler(service, context.Background(), descFunc, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -65,12 +79,12 @@ func (p *processor) processUnaryRPC(buf bytes.Buffer, method string, desc grpc.M
 	return bytes.NewBuffer(rsp), nil
 }
 
-/// 先放着
-// server is used to implement helloworld.GreeterServer.
-type server struct{}
-
-// SayHello implements helloworld.GreeterServer
-func (s server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
-	fmt.Println("######### get server request name :" + in.Name)
-	return &pb.HelloReply{Message: "Hello " + in.Name}, nil
-}
+///// 先放着
+//// server is used to implement helloworld.GreeterServer.
+//type server struct{}
+//
+//// SayHello implements helloworld.GreeterServer
+//func (s server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
+//	fmt.Println("######### get server request name :" + in.Name)
+//	return &pb.HelloReply{Message: "Hello " + in.Name}, nil
+//}

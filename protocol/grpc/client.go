@@ -89,7 +89,7 @@ type Client struct {
 	invoker reflect.Value
 }
 
-// NewClient creates a new gRPC client.
+// NewClient creates a new gRPC client. 返回的client的invoker是包含SayHello方法的结构
 func NewClient(url *common.URL) *Client {
 	// if global trace instance was set , it means trace function enabled. If not , will return Nooptracer
 	tracer := opentracing.GlobalTracer()
@@ -115,11 +115,11 @@ func NewClient(url *common.URL) *Client {
 		invoker:    reflect.ValueOf(invoker),
 	}
 }
-
+// 返回包含SayHello方法的struct
 func getInvoker(impl interface{}, conn *grpc.ClientConn) interface{} {
 	var in []reflect.Value
 	in = append(in, reflect.ValueOf(conn))
 	method := reflect.ValueOf(impl).MethodByName("GetDubboStub")
 	res := method.Call(in)
-	return res[0].Interface()
+	return res[0].Interface()//res[0] 是一个包含了SayHello方法的struct
 }

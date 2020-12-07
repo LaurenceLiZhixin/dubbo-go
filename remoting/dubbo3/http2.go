@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc"
+	"github.com/apache/dubbo-go/common"
 	"io"
 	"net"
-	pb "triple-protocol/protocol"
 
 	h2 "golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -20,18 +18,20 @@ type H2Controller struct {
 	isServer  bool
 
 	streamMap map[uint32]*stream
-	desc grpc.MethodDesc
+	service common.RPCService
+	url *common.URL
 }
 
-func NewH2Controller(conn net.Conn, isServer bool, desc grpc.MethodDesc) *H2Controller {
+func NewH2Controller(conn net.Conn, isServer bool, service common.RPCService, url *common.URL) *H2Controller {
 	fm := h2.NewFramer(conn, conn)
 	fm.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
 	return &H2Controller{
 		rawFramer: fm,
 		conn:      conn,
+		url: url,
 		isServer:  isServer,
 		streamMap: make(map[uint32]*stream, 8),
-		desc: desc,
+		service: service,
 	}
 }
 
@@ -204,7 +204,7 @@ func (h *H2Controller) handleDataFrame(fm *h2.DataFrame) {
 }
 
 func (h *H2Controller) addStream(data parsedTripleHeaderData) {
-	h.streamMap[data.streamID] = newStream(data, h.desc)
+	h.streamMap[data.streamID] = newStream(data, h.service, h.url)
 	go h.runSendRsp(h.streamMap[data.streamID])
 }
 
@@ -276,15 +276,13 @@ func (h *H2Controller) UnaryInvoke(path string, url string,data []byte) {
 			parsedTripleHeaderData.FromMetaHeaderFrame(fm)
 		case *h2.DataFrame:
 			fmt.Println("DataFrame")
-			fm.Data()
 			frameData := fm.Data()
 			fmt.Println(len(frameData))
 			header := frameData[:5]
 			length := binary.BigEndian.Uint32(header[1:])
 			fmt.Println("length = ", length)
-			rsp := pb.HelloReply{}
-			proto.Unmarshal(fm.Data()[5:5+length], &rsp)
-			fmt.Printf("rsp = %+v\n", rsp)
+			//proto.Unmarshal(fm.Data()[5:5+length], )
+			fmt.Printf("rsp = %+v\n",frameData )
 
 			//todo 这里增加返回指针，返回请求结果
 
